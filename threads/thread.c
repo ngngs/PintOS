@@ -440,7 +440,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	list_init(&t->donations);
 	t->magic = THREAD_MAGIC;
 
-	t->child_exit_code = -1;
+	t->my_exit_code = -1;
 	t->my_child = NULL;
 	t->my_parent = initial_thread;
 	t->my_file = NULL;
@@ -449,6 +449,8 @@ init_thread (struct thread *t, const char *name, int priority) {
 	{
 		t->fd_table[i] = NULL;
 	}
+
+	list_init(&t->child_list);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

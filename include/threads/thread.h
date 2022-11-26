@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -18,10 +19,19 @@ enum thread_status {
 	THREAD_DYING        /* About to be destroyed. */
 };
 
+
 /* Thread identifier type.
    You can redefine this to whatever type you like. */
 typedef int tid_t;
 #define TID_ERROR ((tid_t) -1)          /* Error value for tid_t. */
+
+struct child_info {
+	bool finished;
+	tid_t tid;
+	int exit_code;
+	struct list_elem c_elem;
+	struct semaphore c_semaphore;
+};
 
 /* Thread priorities. */
 #define PRI_MIN 0                       /* Lowest priority. */
@@ -29,7 +39,7 @@ typedef int tid_t;
 #define PRI_MAX 63                      /* Highest priority. */
 
 #define ERROR_EXIT2 -2
-
+#define FDLIMIT 128
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -100,11 +110,14 @@ struct thread {
 	struct list_elem donation_elem;
 
 	int my_exit_code;
-	int child_exit_code;
+	// int child_exit_code;
 	struct thread *my_child;
 	struct thread *my_parent;
 
 	struct file *my_file;
+
+	struct list child_list;
+	struct child_info *my_info;
 
 	int64_t wakeup_tick;                /* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
