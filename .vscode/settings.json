@@ -25,6 +25,10 @@
         "stdbool.h": "c",
         "malloc.h": "c",
         "vaddr.h": "c",
-        "vm.h": "c"
+        "vm.h": "c",
+        "hash.h": "c",
+        "uninit.h": "c",
+        "inspect.h": "c",
+        "mmu.h": "c"
     }
 }

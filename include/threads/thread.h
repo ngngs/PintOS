@@ -121,6 +121,9 @@ struct thread
 	struct list child_list;
 	struct list donations;
 
+	void *stack_rsp;				/* Project 3 Virtual Memory */
+	void *stack_bottom;				/* Project 3 Virtual Memory */
+
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */

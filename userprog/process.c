@@ -419,7 +419,7 @@ struct ELF64_PHDR {
 #define ELF ELF64_hdr
 #define Phdr ELF64_PHDR
 
-static bool setup_stack (struct intr_frame *if_);
+// static bool setup_stack (struct intr_frame *if_);
 static bool validate_segment (const struct Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
       uint32_t read_bytes, uint32_t zero_bytes,
@@ -741,10 +741,35 @@ install_page (void *upage, void *kpage, bool writable) {
  * upper block. */
 
 static bool
+install_page (void *upage, void *kpage, bool writable) {
+   struct thread *t = thread_current ();
+
+   /* Verify that there's not already a page at that virtual
+    * address, then map our page there. */
+   return (pml4_get_page (t->pml4, upage) == NULL
+         && pml4_set_page (t->pml4, upage, kpage, writable));
+}
+
+static bool
 lazy_load_segment (struct page *page, void *aux) {
    /* TODO: Load the segment from the file */
    /* TODO: This called when the first page fault occurs on address VA. */
    /* TODO: VA is available when calling this function. */
+   struct send_data_via *aux_info = (struct send_data_via *)aux;
+   struct file *file = aux_info->file;
+   off_t pos = aux_info->position;
+   size_t page_read_bytes = aux_info->page_read_bytes;
+   size_t page_zero_bytes = aux_info->page_zero_bytes;
+   
+   file_seek(file, pos);
+
+   if (file_read(file, page->frame->kva, page_read_bytes) != page_read_bytes){
+      palloc_free_page(page);
+      return false;
+   }
+   memset(page->frame->kva + page_read_bytes, 0, page_zero_bytes);
+
+   return true;
 }
 
 /* Loads a segment starting at offset OFS in FILE at address
@@ -768,6 +793,9 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
    ASSERT (pg_ofs (upage) == 0);
    ASSERT (ofs % PGSIZE == 0);
 
+   off_t position = ofs;
+
+   file_seek(file, position);
    while (read_bytes > 0 || zero_bytes > 0) {
       /* Do calculate how to fill this page.
        * We will read PAGE_READ_BYTES bytes from FILE
@@ -776,29 +804,45 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
       size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
       /* TODO: Set up aux to pass information to the lazy_load_segment. */
-      void *aux = NULL;
-      if (!vm_alloc_page_with_initializer (VM_ANON, upage,
-               writable, lazy_load_segment, aux))
-         return false;
+      struct send_data_via *aux_info = (struct send_data_via *)malloc(sizeof(struct send_data_via));
+      aux_info->file = file;
+      aux_info->position = position;
+      aux_info->page_read_bytes = page_read_bytes;
+      aux_info->page_zero_bytes = page_zero_bytes;
 
-      /* Advance. */
+      void *aux = aux_info;
+      if (!vm_alloc_page_with_initializer(VM_ANON, upage, writable, lazy_load_segment, aux)){
+         return false;
+      }
       read_bytes -= page_read_bytes;
       zero_bytes -= page_zero_bytes;
       upage += PGSIZE;
+      position += page_read_bytes;
+
    }
    return true;
 }
 
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
-static bool
+bool
 setup_stack (struct intr_frame *if_) {
    bool success = false;
-   void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
-
+   // void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
+   uint8_t *kpage;
    /* TODO: Map the stack on stack_bottom and claim the page immediately.
     * TODO: If success, set the rsp accordingly.
     * TODO: You should mark the page is stack. */
    /* TODO: Your code goes here */
+   kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+   if (kpage != NULL){
+      success = install_page(((uint8_t *)USER_STACK) - PGSIZE, kpage, true);
+      if (success) {
+         if_-> rsp = USER_STACK; 
+      }
+      else {
+         palloc_free_page(kpage);
+      }
+   }
 
    return success;
 }

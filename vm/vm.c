@@ -3,7 +3,10 @@
 #include "threads/malloc.h"
 #include "vm/vm.h"
 #include "vm/inspect.h"
-
+#include "vm/uninit.h"
+#include "kernel/hash.h"
+#include "include/threads/mmu.h"
+#include "userprog/process.h"
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -53,8 +56,19 @@ vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writable,
 		/* TODO: Create the page, fetch the initialier according to the VM type,
 		 * TODO: and then create "uninit" page struct by calling uninit_new. You
 		 * TODO: should modify the field after calling the uninit_new. */
-
+		struct page *page = (struct page *)malloc(sizeof(struct page));
+		switch(VM_TYPE(type)){
+			case VM_ANON :
+				uninit_new (page, upage, init, type, aux, anon_initializer);
+				break;
+			case VM_FILE :
+				uninit_new (page, upage, init, type, aux, file_backed_initializer);
+				break;
+		}
 		/* TODO: Insert the page into the spt. */
+		page->writable = writable;
+		spt_insert_page(spt, page);
+		return true;
 	}
 err:
 	return false;
@@ -63,10 +77,17 @@ err:
 /* Find VA from spt and return page. On error, return NULL. */
 struct page *
 spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
-	struct page *page = NULL;
 	/* TODO: Fill this function. */
-
-	return page;
+	struct page *page = (struct page*)malloc(sizeof(struct page));
+	struct hash_elem *hash_find_elem;
+	page->va = pg_round_down(va);
+	hash_find_elem = hash_find(&spt->hash, &page->hash_elem);
+	free(page);
+	if (hash_find_elem == NULL){
+		return NULL;
+	} else {
+		return hash_entry(hash_find_elem, struct page, hash_elem);
+	}
 }
 
 /* Insert PAGE into spt with validation. */
@@ -75,8 +96,13 @@ spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
 	int succ = false;
 	/* TODO: Fill this function. */
-
-	return succ;
+	if (!hash_insert(&spt->hash, &page->hash_elem)){
+		succ = true;
+		return succ;
+	}
+	else {
+		return succ;
+	}
 }
 
 void
@@ -110,8 +136,15 @@ vm_evict_frame (void) {
  * space.*/
 static struct frame *
 vm_get_frame (void) {
-	struct frame *frame = NULL;
 	/* TODO: Fill this function. */
+	struct frame *frame = (struct frame *)malloc(sizeof(struct frame));
+	frame->page = NULL;
+	frame->kva = palloc_get_page(PAL_USER | PAL_ZERO);
+	/* user pool memory가 꽉 찼을 때, frame을 하나 swap으로 보내주고 disk에서 그만큼 메모리를 가져와
+	frame에 가져온다. 우선 PANIC으로 구현*/
+	if (frame == NULL || frame->kva == NULL){
+		PANIC("todo");
+	}
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);
@@ -136,8 +169,29 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
+	struct hash_elem hash_elem_fault;
 
-	return vm_do_claim_page (page);
+	/* check  User memory*/
+	if (is_kernel_vaddr(addr)){
+		return false;
+	}
+	void *rsp_stack = is_kernel_vaddr(f->rsp) ? thread_current()->stack_rsp : f->rsp;
+
+	if (not_present){
+		
+		if (spt_find_page(spt, addr) == NULL){
+			if(rsp_stack - 8 <= addr && USER_STACK - 0x100000 <= addr && addr <= USER_STACK){
+				vm_stack_growth(thread_current()->stack_bottom - PGSIZE);
+				return true;
+			}
+			return false;
+		}
+		else{
+			page = spt_find_page(spt, addr);
+			return vm_do_claim_page(page);
+		}
+	}
+	return false;
 }
 
 /* Free the page.
@@ -153,27 +207,37 @@ bool
 vm_claim_page (void *va UNUSED) {
 	struct page *page = NULL;
 	/* TODO: Fill this function */
-
+	page = spt_find_page(&thread_current()->spt, va);
+	if (page == NULL){
+		return false;
+	}
 	return vm_do_claim_page (page);
 }
 
 /* Claim the PAGE and set up the mmu. */
 static bool
 vm_do_claim_page (struct page *page) {
-	struct frame *frame = vm_get_frame ();
-
+	struct frame *frame = vm_get_frame();
+	struct thread *curr = thread_current();
 	/* Set links */
 	frame->page = page;
 	page->frame = frame;
 
 	/* TODO: Insert page table entry to map page's VA to frame's PA. */
-
-	return swap_in (page, frame->kva);
+	if(pml4_set_page(curr->pml4,page->va,frame->kva,page->writable)){
+		return swap_in (page, frame->kva);
+	}
+	else{
+		PANIC("Fail pml4 set page !!!!!!");
+		return false;
+	}
+	
 }
 
 /* Initialize new supplemental page table */
 void
 supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
+	hash_init(&spt->hash,page_hash,page_less,NULL);
 }
 
 /* Copy supplemental page table from src to dst */
