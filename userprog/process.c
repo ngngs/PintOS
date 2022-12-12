@@ -229,11 +229,11 @@ process_exec (void *f_name) {
    #ifdef VM
         supplemental_page_table_init(&thread_current()->spt);
    #endif
-   // lock_acquire(&filesys_lock);
+   lock_acquire(&filesys_lock);
    /* And then load the binary */
    success = load (file_name, &_if);
    /* If load failed, quit. */
-   // lock_release(&filesys_lock);
+   lock_release(&filesys_lock);
    palloc_free_page (file_name);
    if (!success)
       return -1;

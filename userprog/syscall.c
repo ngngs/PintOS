@@ -34,6 +34,54 @@ void syscall_handler (struct intr_frame *);
 #define MSR_LSTAR 0xc0000082        /* Long mode SYSCALL target */
 #define MSR_SYSCALL_MASK 0xc0000084 /* Mask for the eflags */
 
+bool
+check_valid_addr(void * addr){
+	struct thread *curr = thread_current();
+	struct page *page;
+	// printf("====check_valid_addr\n");
+	// printf("fault_addr : %X f->rsp : %X thread_current()->stack_pointer : %X\n", addr, curr->tf.rsp, thread_current()->stack_pointer);
+	if ((addr
+			&& is_user_vaddr(addr)
+			&& ( (page = spt_find_page(&curr->spt, addr)) != NULL) 
+				||(addr <= USER_STACK && addr >= USER_STACK - 0x100000  && addr >= pg_round_down(curr->stack_rsp)) )){
+		return true;
+	}
+	else
+		return false;
+}
+
+/*
+* *버퍼 유효성 확인
+* writable체크(가상주소만, 스택X), 유효주소여부확인
+*/
+bool
+check_valid_buffer(void* buffer, unsigned size, bool need_writable){
+	// offset 정렬
+	struct thread *curr = thread_current();
+	if (pg_ofs(buffer) != 0){
+		size += (buffer - pg_round_down(buffer));
+		buffer = pg_round_down(buffer);
+	}
+	ASSERT(pg_ofs(buffer) == 0); //정렬 여부 확인
+	while(1){
+		// 유효주소 확인
+		if (!check_valid_addr(buffer))
+			return false;
+		// writable 확인
+		struct page* page = spt_find_page(&curr->spt, buffer);
+		if(page!= NULL && !page->writable && need_writable){
+			return false;
+		}
+		if(size < PGSIZE){
+			break; 
+		}
+		buffer += PGSIZE;
+		size -= PGSIZE;
+	}
+	return true;
+}
+
+
 void
 syscall_init (void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
@@ -87,9 +135,7 @@ bool sys_remove_handler(char *filename){
 int sys_open_handler(char *filename){
 	// return -1;
 	struct thread *curr = thread_current();
-	if (!(filename
-			&& is_user_vaddr(filename)
-		  	&& pml4_get_page(curr->pml4, filename)))
+	if (!(check_valid_addr(filename)))
 	{
 		curr->my_exit_code = -1;
 		thread_exit();
@@ -147,7 +193,7 @@ int sys_filesize_handler(int fd){
 int sys_read_handler(int fd, void* buffer, unsigned size){
 	struct thread *curr = thread_current();
 	int result;
-	if (fd < FDBASE || fd >= FDLIMIT || curr->fd_table[fd] == NULL || buffer == NULL || is_kernel_vaddr(buffer) || !pml4_get_page(curr->pml4, buffer))
+	if (fd < FDBASE || fd >= FDLIMIT || curr->fd_table[fd] == NULL || !(check_valid_buffer(buffer, size, true)))
 	{
 		thread_current()->my_exit_code = -1;
 		thread_exit();
@@ -167,7 +213,7 @@ int sys_write_handler(int fd, void *buffer, unsigned size){
 		putbuf(buffer, size);
 		return size;
 	}
-	if (fd < FDBASE || fd >= FDLIMIT || curr->fd_table[fd] == NULL || buffer == NULL || is_kernel_vaddr(buffer) || !pml4_get_page(curr->pml4, buffer)) 
+	if (fd < FDBASE || fd >= FDLIMIT || curr->fd_table[fd] == NULL || buffer == NULL || !(check_valid_buffer(buffer, size, false))) 
 	{
 		curr->my_exit_code = -1;
 		thread_exit();
