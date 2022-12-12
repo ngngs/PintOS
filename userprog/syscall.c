@@ -16,7 +16,7 @@
 #include "userprog/process.h"
 #include "lib/string.h"
 #include "threads/palloc.h"
-
+#include <stdlib.h>
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -216,6 +216,58 @@ sys_seek_handler(int fd, unsigned position){
 	
 }
 
+void sys_mmap_handler(struct intr_frame *f) {
+    void *addr = f->R.rdi;
+    size_t length = f->R.rsi;
+    int writable = f->R.rdx;
+    int fd = f->R.r10;
+    off_t offset = f->R.r8;
+	struct thread *curr = thread_current();
+	struct file **f_table = curr->fd_table;
+    struct file *file = f_table[fd];
+    // printf(" file  1 =   %X   \n",file);
+    if(file == NULL){
+    	curr->my_exit_code = -1;
+		thread_exit();
+    }
+    if(addr + length == 0){
+        f->R.rax = NULL;
+        return f->R.rax;
+    }
+
+    if(offset % PGSIZE !=0){
+        f->R.rax = NULL;
+        return f->R.rax;
+    }
+
+    if(pg_round_down(addr) != addr || is_kernel_vaddr(addr)){
+        f->R.rax = NULL;
+        return f->R.rax;
+    }
+    if(spt_find_page(&thread_current()->spt,addr)){
+        f->R.rax = NULL;
+        return f->R.rax;
+    }
+
+    if(addr == NULL || (long long)length ==0){
+        f->R.rax = NULL;
+        return f->R.rax;
+    }
+
+    if(fd < FDBASE || fd >= FDLIMIT || curr->fd_table[fd] == NULL){
+        curr->my_exit_code = -1;
+		thread_exit();
+    }
+    void *ret = do_mmap(addr,length,writable,file, offset);
+    f->R.rax = ret;
+}
+
+void sys_mnumap_handler(struct intr_frame *f) {
+    void *addr = f->R.rdi;
+    do_munmap(addr);
+}
+
+
 /* The main system call interface */
 void
 syscall_handler (struct intr_frame *f) { 
@@ -261,6 +313,12 @@ syscall_handler (struct intr_frame *f) {
 		break;
 	case SYS_SEEK:
 		sys_seek_handler(f->R.rdi,f->R.rsi);
+		break;
+	case SYS_MMAP:
+		sys_mmap_handler(f);
+		break;
+	case SYS_MUNMAP:
+		sys_mnumap_handler(f);
 		break;
 	
 	default:

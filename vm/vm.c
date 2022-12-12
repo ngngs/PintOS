@@ -248,6 +248,44 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 bool
 supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
 		struct supplemental_page_table *src UNUSED) {
+	struct hash *src_hash = &src->hash;
+	struct hash *dst_hash = &dst->hash;  
+	struct hash_iterator i;
+	hash_first(&i,src_hash);
+	while(hash_next(&i)){
+		struct page *src_page = hash_entry(hash_cur(&i),struct page, hash_elem);
+		enum vm_type src_type = page_get_type(src_page);		// src_page의 type을 불러온다. 즉, 부모의 페이지 타입을 불러온다
+		void *src_page_va = src_page->va;						// src_page의 가상주소. 즉, 부모 페이지의 가상주소
+		bool src_writable = src_page->writable;
+		vm_initializer *src_init = src_page->uninit.init;		// src_page의 uninit의 init 은 lazy_load_segment 이다.
+		
+		void *aux = src_page->uninit.aux;
+			
+		if(src_page->uninit.type & VM_MARKER_0){
+			setup_stack(&thread_current()->tf);
+		}
+
+		else if(src_page->operations->type == VM_UNINIT){
+			if(!vm_alloc_page_with_initializer(src_type,src_page_va,src_writable,src_init,aux)){
+				return false;
+			}			
+		}
+		else{
+			if(!vm_alloc_page(src_type,src_page_va,src_writable)){
+				return false;
+			}
+			if(!vm_claim_page(src_page_va)){
+				return false;
+			}
+		}
+
+
+		if(src_page->operations->type != VM_UNINIT){
+			struct page *dst_page = spt_find_page(dst,src_page_va);
+			memcpy(dst_page->frame->kva,src_page->frame->kva,PGSIZE);
+		}
+	}
+	return true;
 }
 
 /* Free the resource hold by the supplemental page table */
@@ -255,5 +293,5 @@ void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	 * TODO: writeback all the modified contents to the storage. */
-	// hash_destroy(&spt->hash, spt_free_destroy);
+	hash_destroy(&spt->hash, spt_free_destroy);
 }

@@ -226,11 +226,14 @@ process_exec (void *f_name) {
    /* We first kill the current context */
    process_cleanup();
 
-   lock_acquire(&filesys_lock);
+   #ifdef VM
+        supplemental_page_table_init(&thread_current()->spt);
+   #endif
+   // lock_acquire(&filesys_lock);
    /* And then load the binary */
    success = load (file_name, &_if);
    /* If load failed, quit. */
-   lock_release(&filesys_lock);
+   // lock_release(&filesys_lock);
    palloc_free_page (file_name);
    if (!success)
       return -1;
@@ -826,21 +829,19 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Create a PAGE of stack at the USER_STACK. Return true on success. */
 bool
 setup_stack (struct intr_frame *if_) {
-   bool success = false;
-   // void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
    uint8_t *kpage;
+   bool success = false;
+   void *stack_bottom = (void *) (((uint8_t *) USER_STACK) - PGSIZE);
    /* TODO: Map the stack on stack_bottom and claim the page immediately.
     * TODO: If success, set the rsp accordingly.
     * TODO: You should mark the page is stack. */
    /* TODO: Your code goes here */
-   kpage = palloc_get_page(PAL_USER | PAL_ZERO);
-   if (kpage != NULL){
-      success = install_page(((uint8_t *)USER_STACK) - PGSIZE, kpage, true);
-      if (success) {
-         if_-> rsp = USER_STACK; 
-      }
-      else {
-         palloc_free_page(kpage);
+   // kpage = palloc_get_page(PAL_USER | PAL_ZERO);
+   if(vm_alloc_page(VM_ANON | VM_MARKER_0, stack_bottom, 1)){
+      success = vm_claim_page(stack_bottom);
+      if(success){
+         if_->rsp = USER_STACK;
+         thread_current()->stack_bottom = stack_bottom;
       }
    }
 
