@@ -29,6 +29,7 @@
         "hash.h": "c",
         "uninit.h": "c",
         "inspect.h": "c",
-        "mmu.h": "c"
+        "mmu.h": "c",
+        "main.h": "c"
     }
 }

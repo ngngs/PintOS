@@ -21,7 +21,7 @@ void process_exit (void);
 void process_activate (struct thread *next);
 
 /* Project3 */
-static bool lazy_load_segment(struct page *page, void *aux);
+bool lazy_load_segment(struct page *page, void *aux);
 bool setup_stack(struct intr_frame *if_);
 
 #endif /* userprog/process.h */
