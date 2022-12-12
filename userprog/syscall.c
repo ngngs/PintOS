@@ -111,9 +111,7 @@ sys_exit_handler(int arg1){
 bool sys_create_handler(char *filename, unsigned intial_size){
 	bool result;
 	struct thread *curr = thread_current();
-	if (!(filename 
-			&& is_user_vaddr(filename)
-		  	&& pml4_get_page(curr->pml4, filename)))
+	if (!(check_valid_addr(filename)))
 	{
 		curr->my_exit_code = -1;
 		thread_exit();
@@ -235,9 +233,7 @@ int sys_wait_handler(int pid){
 
 int sys_exec_handler(char * cmd_line){
 	struct thread *curr = thread_current();
-	if (!(cmd_line
-			&& is_user_vaddr(cmd_line)
-		  	&& pml4_get_page(curr->pml4, cmd_line)))
+	if (!check_valid_addr(cmd_line))
 	{
 		curr->my_exit_code = -1;
 		thread_exit();
