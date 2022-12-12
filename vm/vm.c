@@ -7,6 +7,10 @@
 #include "kernel/hash.h"
 #include "include/threads/mmu.h"
 #include "userprog/process.h"
+
+struct list frame_table;
+struct list_elem *start;
+
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
 void
@@ -19,6 +23,8 @@ vm_init (void) {
 	register_inspect_intr ();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+	list_init(&frame_table);
+	start = list_begin(&frame_table);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -94,14 +100,13 @@ spt_find_page (struct supplemental_page_table *spt UNUSED, void *va UNUSED) {
 bool
 spt_insert_page (struct supplemental_page_table *spt UNUSED,
 		struct page *page UNUSED) {
-	bool succ = false;
+	// bool succ = false;
 	/* TODO: Fill this function. */
-	if (!hash_insert(&spt->hash, &page->hash_elem)){
-		succ = true;
-		return succ;
+	if (hash_insert(&spt->hash, &page->hash_elem) == NULL){
+		return true;
 	}
 	else {
-		return succ;
+		return false;
 	}
 }
 
@@ -116,7 +121,28 @@ static struct frame *
 vm_get_victim (void) {
 	struct frame *victim = NULL;
 	 /* TODO: The policy for eviction is up to you. */
+	struct thread *curr = thread_current();
+	struct list_elem *e = start;
 
+	for (start = e; start != list_end(&frame_table); start = list_next(start)){
+		victim = list_entry(start, struct frame, frame_elem);
+		if(pml4_is_accessed(curr->pml4, victim->page->va)){
+			pml4_set_accessed(curr->pml4, victim->page->va, 0);
+		}
+		else {
+			return victim;
+		}
+	}
+
+	for (start = list_begin(&frame_table); start != e; start = list_next(start)){
+		victim = list_entry(start, struct frame, frame_elem);
+		if(pml4_is_accessed(curr->pml4, victim->page->va)){
+			pml4_set_accessed(curr->pml4, victim->page->va, 0);
+		}
+		else{
+			return victim;
+		}
+	}
 	return victim;
 }
 
@@ -126,8 +152,10 @@ static struct frame *
 vm_evict_frame (void) {
 	struct frame *victim UNUSED = vm_get_victim ();
 	/* TODO: swap out the victim and return the evicted frame. */
-
-	return NULL;
+	if(victim != NULL){
+		swap_out(victim->page);
+	}
+	return victim;
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
@@ -138,13 +166,19 @@ static struct frame *
 vm_get_frame (void) {
 	/* TODO: Fill this function. */
 	struct frame *frame = (struct frame *)malloc(sizeof(struct frame));
-	frame->page = NULL;
+	// frame->page = NULL;
 	frame->kva = palloc_get_page(PAL_USER | PAL_ZERO);
 	/* user pool memory가 꽉 찼을 때, frame을 하나 swap으로 보내주고 disk에서 그만큼 메모리를 가져와
 	frame에 가져온다. 우선 PANIC으로 구현*/
-	if (frame == NULL || frame->kva == NULL){
-		PANIC("todo");
+	
+	if(frame->kva == NULL){
+		frame = vm_evict_frame();
+		frame->page = NULL;
+		return frame;
 	}
+
+	list_push_back(&frame_table, &frame->frame_elem);
+	frame->page = NULL;
 
 	ASSERT (frame != NULL);
 	ASSERT (frame->page == NULL);

@@ -43,7 +43,7 @@ check_valid_addr(void * addr){
 	if ((addr
 			&& is_user_vaddr(addr)
 			&& ( (page = spt_find_page(&curr->spt, addr)) != NULL) 
-				||(addr <= USER_STACK && addr >= USER_STACK - 0x100000  && addr >= pg_round_down(curr->stack_rsp)) )){
+				||(addr <= USER_STACK && addr >= USER_STACK - 0x100000  && addr >= pg_round_down(curr->stack_bottom)) )){
 		return true;
 	}
 	else
