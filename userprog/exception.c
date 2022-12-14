@@ -149,10 +149,10 @@ page_fault (struct intr_frame *f) {
 		thread_current()->my_exit_code = -1;
 		thread_exit();
 	}
-	// if(write) {
-	// 	thread_current()->my_exit_code = -1;
-	// 	thread_exit();
-	// }
+	if(write) {
+		thread_current()->my_exit_code = -1;
+		thread_exit();
+	}
 
 	/* Count page faults. */
 	page_fault_cnt++;
